@@ -507,9 +507,6 @@ main{padding-bottom:40px}
 
 /* ---- checkout ---- */
 .co{padding:16px}
-.co__steps{display:flex;gap:6px;margin-bottom:18px}
-.co__steps i{flex:1;height:4px;border-radius:99px;background:var(--line)}
-.co__steps i.on{background:var(--primary)}
 .co__h{font-family:"Anton",sans-serif;font-weight:400;font-size:21px;color:var(--ink);letter-spacing:.02em;margin-bottom:4px}
 .co__sub{color:var(--ink-soft);font-weight:600;font-size:13px;margin-bottom:16px}
 .pay-opts{display:flex;flex-direction:column;gap:10px;margin-bottom:6px}
@@ -878,7 +875,7 @@ var cart = [];
 try{ var s = localStorage.getItem("mrtaco_cart"); if(s) cart = JSON.parse(s) || []; }catch(e){}
 function save(){ try{ localStorage.setItem("mrtaco_cart", JSON.stringify(cart)); }catch(e){} }
 
-var checkoutStep = 0; // 0 cart, 1 datos, 2 pago, 3 resumen, 4 listo
+var checkoutStep = 0; // 0 carrito, 1 finalizar pedido (datos+pago juntos), 2 listo
 var form = { name:"", phone:"", address:"", notes:"", pay:"", cash:"" };
 var lastOrder = null;
 
@@ -1139,10 +1136,8 @@ function thumb(l){
 
 function renderCart(){
   if(checkoutStep === 0) return renderCartList();
-  if(checkoutStep === 1) return renderDatos();
-  if(checkoutStep === 2) return renderPago();
-  if(checkoutStep === 3) return renderResumen();
-  if(checkoutStep === 4) return renderDone();
+  if(checkoutStep === 1) return renderCheckout();
+  if(checkoutStep === 2) return renderDone();
 }
 
 function renderCartList(){
@@ -1201,44 +1196,11 @@ function renderCartList(){
   $("#toDatos").addEventListener("click", function(){ checkoutStep = 1; renderCart(); });
 }
 
-function stepsBar(n){
-  var h = '<div class="co__steps">';
-  for(var i=1;i<=3;i++) h += '<i class="'+(i<=n?"on":"")+'"></i>';
-  return h + '</div>';
-}
 function backBtn(to){
-  return '<button class="btn-ghost" id="coBack">← Volver</button>';
+  return '<button class="btn-ghost" id="coBack">← Volver al carrito</button>';
 }
 function wireBack(to){
   var b = $("#coBack"); if(b) b.addEventListener("click", function(){ checkoutStep = to; renderCart(); });
-}
-
-function renderDatos(){
-  cartTitle.textContent = "Tus datos";
-  cartScroll.innerHTML = '<div class="co">'+stepsBar(1)+
-    '<div class="co__h">¿A dónde lo llevamos?</div>'+
-    '<p class="co__sub">Con esto coordinamos la entrega.</p>'+
-    field("name","Nombre","text","Tu nombre",form.name)+
-    field("phone","Teléfono / WhatsApp","tel","Ej: 300 123 4567",form.phone)+
-    field("address","Dirección de entrega","text","Calle, carrera, # ...",form.address)+
-    fieldArea("notes","Indicaciones adicionales","opcional","Apto, torre, punto de referencia, portería...",form.notes)+
-  '</div>';
-  cartFoot.innerHTML = backBtn(0) +
-    '<button class="btn-primary" id="toPago">Ir al pago'+
-    '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 5l7 7-7 7M20 12H4"/></svg></button>';
-  wireBack(0);
-  ["name","phone","address","notes"].forEach(function(k){
-    var inp = document.getElementById("f_"+k);
-    inp.addEventListener("input", function(){ form[k] = this.value; document.getElementById("fw_"+k).classList.remove("err"); });
-  });
-  $("#toPago").addEventListener("click", function(){
-    var ok = true;
-    if(!form.name.trim()){ mark("name"); ok = false; }
-    if(form.phone.replace(/\D/g,"").length < 7){ mark("phone"); ok = false; }
-    if(!form.address.trim()){ mark("address"); ok = false; }
-    if(!ok){ cartScroll.querySelector(".field.err input").focus(); return; }
-    checkoutStep = 2; renderCart();
-  });
 }
 function mark(k){ document.getElementById("fw_"+k).classList.add("err"); }
 function field(k,label,type,ph,val){
@@ -1252,26 +1214,55 @@ function fieldArea(k,label,opt,ph,val){
 }
 function auto(k){ return k==="name"?"name":k==="phone"?"tel":k==="address"?"street-address":"off"; }
 function esc(s){ return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;"); }
+function payOpt(v,title,sub,path){
+  return '<div class="pay" data-v="'+v+'">'+
+    '<span class="pay__ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+path+'</svg></span>'+
+    '<span class="pay__t"><b>'+title+'</b><small>'+sub+'</small></span>'+
+    '<span class="pay__radio"></span></div>';
+}
 
-function renderPago(){
-  cartTitle.textContent = "Pago";
+/* Un solo paso: pedido + datos + pago, con confirmar al final (menos pantallas) */
+function renderCheckout(){
+  cartTitle.textContent = "Finalizar pedido";
   var total = subtotal();
-  var html = '<div class="co">'+stepsBar(2)+
-    '<div class="co__h">¿Cómo vas a pagar?</div>'+
-    '<p class="co__sub">Total a pagar: <b style="color:var(--primary)">'+cop(total)+'</b></p>'+
+  var items = cart.map(function(l){
+    return '<div class="rev__item"><span class="q">'+l.qty+'×</span>'+
+      '<span class="n">'+l.name+(l.meta?'<small>'+l.meta+'</small>':'')+(l.notes?'<small>“'+l.notes+'”</small>':'')+'</span>'+
+      '<span class="p">'+cop(l.unit*l.qty)+'</span></div>';
+  }).join("");
+
+  var html = '<div class="co">';
+  html += '<div class="dt__group"><div class="dt__label">Tu pedido <span>'+cart.length+' producto'+(cart.length===1?'':'s')+' · <a href="#" id="editCart" style="color:var(--primary);font-weight:800">editar</a></span></div>'+
+    '<div class="rev">'+items+'</div>'+
+    '<div class="totals"><div class="totals__row"><span>Subtotal</span><span>'+cop(total)+'</span></div>'+
+    '<div class="totals__row totals__row--big"><span>Total</span><b>'+cop(total)+'</b></div></div></div>';
+
+  html += '<div class="co__h">¿A dónde lo llevamos?</div>'+
+    field("name","Nombre","text","Tu nombre",form.name)+
+    field("phone","Teléfono / WhatsApp","tel","Ej: 300 123 4567",form.phone)+
+    field("address","Dirección de entrega","text","Calle, carrera, # ...",form.address)+
+    fieldArea("notes","Indicaciones adicionales","opcional","Apto, torre, punto de referencia, portería...",form.notes);
+
+  html += '<div class="co__h">¿Cómo vas a pagar?</div>'+
     '<div class="pay-opts">'+
       payOpt("transfer","Transferencia","Coordinas los datos por WhatsApp",
         '<path d="M4 9h16M4 9l3-4h10l3 4M4 9v9a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M9 14h6"/>')+
       payOpt("cash","Efectivo","Pagas al recibir el pedido",
         '<rect x="2.5" y="6" width="19" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/>')+
     '</div>'+
-    '<div id="payExtra"></div>'+
-  '</div>';
+    '<div id="payExtra"></div>';
+  html += '</div>';
   cartScroll.innerHTML = html;
-  cartFoot.innerHTML = backBtn(1) +
-    '<button class="btn-primary" id="toResumen">Revisar pedido'+
-    '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 5l7 7-7 7M20 12H4"/></svg></button>';
-  wireBack(1);
+
+  cartFoot.innerHTML = backBtn(0) +
+    '<button class="btn-primary" id="placeOrder">🌮 Realizar pedido <span class="amt">'+cop(total)+'</span></button>';
+  wireBack(0);
+  $("#editCart").addEventListener("click", function(e){ e.preventDefault(); checkoutStep = 0; renderCart(); });
+
+  ["name","phone","address","notes"].forEach(function(k){
+    var inp = document.getElementById("f_"+k);
+    inp.addEventListener("input", function(){ form[k] = this.value; document.getElementById("fw_"+k).classList.remove("err"); });
+  });
 
   function syncPay(){
     $$(".pay").forEach(function(p){ p.classList.toggle("on", p.dataset.v === form.pay); });
@@ -1307,51 +1298,27 @@ function renderPago(){
   $$(".pay").forEach(function(p){ p.addEventListener("click", function(){ form.pay = p.dataset.v; syncPay(); }); });
   if(form.pay) syncPay();
 
-  $("#toResumen").addEventListener("click", function(){
-    if(!form.pay){ toast("Elige un método de pago"); return; }
-    if(form.pay === "cash"){
+  $("#placeOrder").addEventListener("click", function(){
+    var ok = true, firstErrEl = null;
+    if(!form.name.trim()){ mark("name"); ok = false; firstErrEl = firstErrEl || $("#f_name"); }
+    if(form.phone.replace(/\D/g,"").length < 7){ mark("phone"); ok = false; firstErrEl = firstErrEl || $("#f_phone"); }
+    if(!form.address.trim()){ mark("address"); ok = false; firstErrEl = firstErrEl || $("#f_address"); }
+    if(!form.pay){
+      ok = false; toast("Elige un método de pago");
+      firstErrEl = firstErrEl || $(".pay-opts");
+    } else if(form.pay === "cash"){
       var paid = +String(form.cash).replace(/\D/g,"");
-      if(!paid || paid < total){ var w=$("#fw_cash"); if(w) w.classList.add("err"); return; }
+      if(!paid || paid < total){
+        var w = $("#fw_cash"); if(w) w.classList.add("err");
+        ok = false; firstErrEl = firstErrEl || $("#f_cash");
+      }
     }
-    checkoutStep = 3; renderCart();
+    if(!ok){
+      if(firstErrEl){ firstErrEl.scrollIntoView({block:"center", behavior: reduce ? "auto" : "smooth"}); if(firstErrEl.focus) firstErrEl.focus(); }
+      return;
+    }
+    placeOrder();
   });
-}
-function payOpt(v,title,sub,path){
-  return '<div class="pay" data-v="'+v+'">'+
-    '<span class="pay__ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+path+'</svg></span>'+
-    '<span class="pay__t"><b>'+title+'</b><small>'+sub+'</small></span>'+
-    '<span class="pay__radio"></span></div>';
-}
-
-function renderResumen(){
-  cartTitle.textContent = "Confirmar";
-  var total = subtotal();
-  var paid = +String(form.cash).replace(/\D/g,"");
-  var items = cart.map(function(l){
-    return '<div class="rev__item"><span class="q">'+l.qty+'×</span>'+
-      '<span class="n">'+l.name+(l.meta?'<small>'+l.meta+'</small>':'')+(l.notes?'<small>“'+l.notes+'”</small>':'')+'</span>'+
-      '<span class="p">'+cop(l.unit*l.qty)+'</span></div>';
-  }).join("");
-  var payLine = form.pay === "transfer"
-    ? "Transferencia · se coordina por WhatsApp"
-    : "Efectivo · paga con " + cop(paid) + " · cambio " + cop(paid - total);
-  cartScroll.innerHTML = '<div class="co">'+stepsBar(3)+
-    '<div class="co__h">Revisa tu pedido</div>'+
-    '<p class="co__sub">Confirma que todo esté bien antes de enviarlo.</p>'+
-    '<div class="rev">'+items+'</div>'+
-    '<div class="totals" style="margin-bottom:14px">'+
-      '<div class="totals__row"><span>Subtotal</span><span>'+cop(total)+'</span></div>'+
-      '<div class="totals__row totals__row--big"><span>Total</span><b>'+cop(total)+'</b></div>'+
-    '</div>'+
-    '<div class="rev-card"><div class="rc-h">Entrega</div>'+
-      '<b>'+esc(form.name)+'</b><br>'+esc(form.phone)+'<br>'+esc(form.address)+
-      (form.notes?'<br><span style="color:var(--ink-soft)">'+esc(form.notes)+'</span>':'')+'</div>'+
-    '<div class="rev-card"><div class="rc-h">Pago</div>'+payLine+'</div>'+
-  '</div>';
-  cartFoot.innerHTML = backBtn(2) +
-    '<button class="btn-primary" id="placeOrder">🌮 Realizar pedido</button>';
-  wireBack(2);
-  $("#placeOrder").addEventListener("click", placeOrder);
 }
 
 function placeOrder(){
@@ -1367,7 +1334,7 @@ function placeOrder(){
   };
   cart = []; save();
   updateCartUI(false);
-  checkoutStep = 4; renderCart();
+  checkoutStep = 2; renderCart();
 }
 
 function waText(o){
