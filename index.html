@@ -875,9 +875,8 @@ var cart = [];
 try{ var s = localStorage.getItem("mrtaco_cart"); if(s) cart = JSON.parse(s) || []; }catch(e){}
 function save(){ try{ localStorage.setItem("mrtaco_cart", JSON.stringify(cart)); }catch(e){} }
 
-var checkoutStep = 0; // 0 carrito, 1 finalizar pedido (datos+pago juntos), 2 listo
+var checkoutStep = 0; // 0 carrito, 1 finalizar pedido (datos+pago juntos) — al confirmar se va directo a WhatsApp
 var form = { name:"", phone:"", address:"", notes:"", pay:"", cash:"" };
-var lastOrder = null;
 
 /* Interfaz siempre en modo claro (ver también el <script> de arranque al inicio del body) */
 
@@ -1137,7 +1136,6 @@ function thumb(l){
 function renderCart(){
   if(checkoutStep === 0) return renderCartList();
   if(checkoutStep === 1) return renderCheckout();
-  if(checkoutStep === 2) return renderDone();
 }
 
 function renderCartList(){
@@ -1324,7 +1322,7 @@ function renderCheckout(){
 function placeOrder(){
   var total = subtotal();
   var paid = +String(form.cash).replace(/\D/g,"");
-  lastOrder = {
+  var order = {
     num: "MT-" + String(Date.now()).slice(-4) + "-" + Math.floor(Math.random()*90+10),
     items: cart.slice(),
     total: total,
@@ -1332,9 +1330,14 @@ function placeOrder(){
     paid: paid,
     change: paid - total
   };
+  /* Va directo a WhatsApp, sin pantalla intermedia de confirmación */
+  window.open("https://wa.me/"+WHATSAPP+"?text="+waText(order), "_blank", "noopener");
   cart = []; save();
   updateCartUI(false);
-  checkoutStep = 2; renderCart();
+  form.cash = ""; form.pay = "";
+  checkoutStep = 0;
+  closeCart();
+  toast("Pedido enviado por WhatsApp 🌮");
 }
 
 function waText(o){
@@ -1363,25 +1366,6 @@ function waText(o){
   return encodeURIComponent(L.join("\n"));
 }
 
-function renderDone(){
-  var o = lastOrder;
-  cartTitle.textContent = "¡Listo!";
-  cartScroll.innerHTML = '<div class="done">'+
-    '<div class="done__check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></div>'+
-    '<h3>¡Pedido realizado!</h3>'+
-    '<div class="done__num">'+o.num+'</div>'+
-    '<p>Envíanos el pedido por WhatsApp para confirmarlo y coordinar el domicilio. Total: <b>'+cop(o.total)+'</b>.</p>'+
-    '<a class="wa-btn" href="https://wa.me/'+WHATSAPP+'?text='+waText(o)+'" target="_blank" rel="noopener">'+
-      '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.5 14.4c-.3-.2-1.7-.9-2-1-.3-.1-.5-.1-.6.2-.2.3-.7.9-.9 1.1-.2.2-.3.2-.6.1-1.6-.8-2.7-1.5-3.7-3.3-.3-.5.3-.5.8-1.5.1-.2 0-.4 0-.5-.1-.2-.6-1.5-.9-2-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.5.1-.7.3-1 .9-1.2 2-1 3.2.5 2.3 2 4.2 4.3 5.6 2.9 1.7 4.3 1.4 5.6 1.2.8-.1 1.7-.7 1.9-1.4.2-.7.2-1.3.1-1.4-.1-.1-.3-.2-.6-.3M12 21.5c-1.7 0-3.3-.5-4.7-1.3l-3.3.9.9-3.2A9.4 9.4 0 1 1 12 21.5M12 2a10.5 10.5 0 0 0-9 15.9L2 22.5l4.7-1.2A10.5 10.5 0 1 0 12 2"/></svg>'+
-      'Enviar pedido por WhatsApp</a>'+
-    '<button class="btn-ghost" id="newOrder" style="margin-top:4px">Hacer un nuevo pedido</button>'+
-  '</div>';
-  cartFoot.innerHTML = "";
-  $("#newOrder").addEventListener("click", function(){
-    checkoutStep = 0; form.cash = ""; form.pay = "";
-    renderCart(); closeCart();
-  });
-}
 
 /* ============ CART UI SYNC ============ */
 var badge = $("#cartBadge");
